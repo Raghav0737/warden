@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Warden HITL Gate Flow",
+    "subtitle": "execute() → escalate → park → inbox → approve → resume",
+    "output": "warden-gate-flow.html"
+  },
+  "lanes": [
+    { "id": "human", "label": "Human — approvals inbox" },
+    { "id": "agent", "label": "Agent graph" },
+    { "id": "kernel", "label": "Warden kernel" },
+    { "id": "store", "label": "Postgres — journal" },
+    { "id": "exceptions", "label": "Terminal exits", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "execute", "label": "Execute", "fromCol": 0, "toCol": 2 },
+    { "id": "gate", "label": "Gate", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "resume", "label": "Resume", "fromCol": 5, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["gnode", "exec", "intent", "policy", "park", "inbox", "approve", "resume"],
+  "nodes": [
+    { "id": "gnode", "lane": "agent", "col": 0, "type": "backend", "label": "Graph node", "sublabel": "await run_gated()" },
+    { "id": "exec", "lane": "kernel", "col": 1, "type": "backend", "label": "execute()", "sublabel": "action + ctx", "tag": "THE seam" },
+    { "id": "intent", "lane": "store", "col": 2, "type": "database", "label": "append intent", "sublabel": "(run_id, action_id)" },
+    { "id": "policy", "lane": "kernel", "col": 3, "type": "security", "label": "PolicyEngine", "sublabel": "evaluate → escalate", "tag": "deny is terminal" },
+    { "id": "park", "lane": "agent", "col": 4, "type": "messagebus", "label": "Park (Pending)", "sublabel": "checkpointer holds run" },
+    { "id": "inbox", "lane": "human", "col": 4, "type": "frontend", "label": "Inbox", "sublabel": "context + buttons" },
+    { "id": "approve", "lane": "human", "col": 5, "type": "security", "label": "Approve", "sublabel": "as alice · named key" },
+    { "id": "resume", "lane": "kernel", "col": 5, "type": "backend", "label": "Resume exec", "sublabel": "sandbox → Allowed", "tag": "done" },
+    { "id": "denied", "lane": "exceptions", "col": 3, "type": "security", "label": "Denied", "sublabel": "no human may override" }
+  ],
+  "edges": [
+    { "from": "gnode", "to": "exec", "label": "run_gated", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop" },
+    { "from": "exec", "to": "intent", "label": "write-ahead", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelAt": [260, 415] },
+    { "from": "intent", "to": "policy", "fromSide": "top", "toSide": "bottom", "route": "drop" },
+    { "from": "policy", "to": "park", "label": "escalate → Pending", "variant": "emphasis", "fromSide": "top", "toSide": "bottom", "route": "drop", "labelSegment": 1, "labelDx": 30 },
+    { "from": "park", "to": "inbox", "label": "gate request", "variant": "security", "fromSide": "top", "toSide": "bottom", "route": "drop" },
+    { "from": "inbox", "to": "approve", "variant": "emphasis" },
+    { "from": "approve", "to": "resume", "label": "Command(resume)", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelSegment": 1 },
+    { "from": "policy", "to": "denied", "label": "deny · terminal", "variant": "security", "role": "error", "fromSide": "bottom", "toSide": "top", "route": "drop", "labelSegment": 1 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Division of labor (lock 3)",
+      "items": [
+        "checkpointer = where the run is parked + resume value",
+        "Journal = what happened, forever, queryable",
+        "Inbox reads the journal projection — never parses checkpoints"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Why it survives crashes",
+      "items": [
+        "Write-ahead intent keyed (run_id, action_id)",
+        "Node re-runs on resume → append is an idempotent no-op",
+        "Kill mid-park → intent with no completion stays queryable"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Locks",
+      "items": [
+        "Re-entry loop written once in warden/hitl/ — call sites don't invent it",
+        "DENY terminal; humans only resolve ESCALATE",
+        "Fail-closed: no audit → no execution"
+      ]
+    }
+  ]
+}

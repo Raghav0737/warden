@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Warden — AI Agent Governance & Human Accountability",
+    "subtitle": "GuardedExecutor seam · journal-first audit · policy guardrails · HITL gates",
+    "output": "warden-architecture.html"
+  },
+  "components": [
+    { "id": "operator", "type": "external", "label": "Operator", "sublabel": "named-key header", "pos": [40, 110], "size": [150, 60] },
+    { "id": "ui", "type": "frontend", "label": "FastAPI + HTMX", "sublabel": "inbox · dashboard · audit", "pos": [40, 300], "size": [170, 64] },
+    { "id": "agent", "type": "frontend", "label": "LangGraph agent", "sublabel": "ops_assistant (phase 1)", "pos": [40, 470], "size": [170, 64] },
+
+    { "id": "projections", "type": "backend", "label": "Projections", "sublabel": "inbox · telemetry · graph", "pos": [270, 110], "size": [170, 64] },
+    { "id": "journal", "type": "backend", "label": "AuditJournal", "sublabel": "append-only · idempotent", "pos": [500, 110], "size": [170, 64], "tag": "single source of truth" },
+    { "id": "policy", "type": "security", "label": "PolicyEngine", "sublabel": "allow | escalate | deny", "pos": [270, 260], "size": [170, 64] },
+    { "id": "runner", "type": "backend", "label": "re-entry helper", "sublabel": "park once · resume once", "pos": [270, 470], "size": [170, 64] },
+    { "id": "executor", "type": "backend", "label": "GuardedExecutor", "sublabel": "execute(action, ctx)", "pos": [500, 430], "size": [190, 80], "tag": "THE seam" },
+    { "id": "sandbox", "type": "security", "label": "SandboxPort", "sublabel": "subprocess | in-process", "pos": [760, 360], "size": [170, 64] },
+    { "id": "llm", "type": "backend", "label": "LLM Client", "sublabel": "usage → journal", "pos": [760, 540], "size": [170, 60] },
+
+    { "id": "jevents", "type": "database", "label": "journal_events", "sublabel": "append-only rows", "pos": [1070, 100], "size": [170, 60] },
+    { "id": "policiesdb", "type": "database", "label": "policies + versions", "sublabel": "rules · pgvector", "pos": [1070, 230], "size": [170, 60] },
+    { "id": "cpoint", "type": "database", "label": "checkpointer", "sublabel": "LangGraph park/resume", "pos": [1070, 360], "size": [170, 60] },
+    { "id": "provider", "type": "external", "label": "LLM provider", "sublabel": "OpenAI-compatible", "pos": [1070, 540], "size": [170, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Warden kernel — warden/ (imports nothing from app/ or agents/)", "wraps": ["projections", "journal", "policy", "runner", "executor", "sandbox", "llm"] },
+    { "kind": "region", "label": "Postgres + pgvector — one store", "wraps": ["jevents", "policiesdb", "cpoint"] }
+  ],
+  "connections": [
+    { "from": "operator", "to": "ui", "label": "approve", "variant": "emphasis" },
+    { "from": "ui", "to": "agent", "label": "start · resume", "labelAt": [125, 378] },
+    { "from": "agent", "to": "runner", "variant": "emphasis" },
+    { "from": "runner", "to": "executor", "variant": "emphasis" },
+    { "from": "executor", "to": "policy", "label": "evaluate", "fromSide": "top", "toSide": "bottom" },
+    { "from": "executor", "to": "journal", "label": "write-ahead", "variant": "emphasis", "fromSide": "top", "toSide": "bottom" },
+    { "from": "executor", "to": "sandbox", "label": "tool", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "from": "executor", "to": "llm", "label": "llm", "fromSide": "right", "toSide": "left" },
+    { "from": "journal", "to": "projections" },
+    { "from": "projections", "to": "ui", "label": "render", "fromSide": "bottom", "toSide": "top" },
+    { "from": "journal", "to": "jevents", "label": "append", "variant": "emphasis" },
+    { "from": "policy", "to": "policiesdb", "label": "rules", "variant": "security" },
+    { "from": "llm", "to": "provider", "label": "API", "variant": "dashed" },
+    { "from": "runner", "to": "cpoint", "label": "park · resume", "variant": "security", "fromSide": "bottom", "toSide": "left", "via": [[355, 640], [1000, 640], [1000, 390]] }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "The seam",
+      "items": [
+        "execute(action, ctx) → Allowed | Denied | Pending | Error",
+        "Only the re-entry helper calls it — graph nodes never touch tools or the model",
+        "Pending is data, never an exception"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Fail-closed (lock 4)",
+      "items": [
+        "No audit possible → no execution → Error(governance_unavailable)",
+        "Error ≠ Denied — accountability keeps them apart",
+        "Write-ahead idempotent on (run_id, action_id)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Locks that hold",
+      "items": [
+        "DENY terminal — humans only resolve ESCALATE",
+        "Approver = named-key header, recorded in the journal",
+        "checkpointer = where the run is · journal = what happened"
+      ]
+    }
+  ]
+}

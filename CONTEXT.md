@@ -1,6 +1,6 @@
 # CONTEXT.md — Warden: AI Agent Governance & Human Accountability
 
-Product name: **Warden** (lock 11). Repo: `github.com/parth5012/warden` (remote TBD).
+Product name: **Warden** (lock 11). Repo: https://github.com/parth5012/warden (branch `main`).
 
 Status: **design grilling in progress.** Decisions below are LOCKED — do not re-litigate in later sessions; reopen only with a load-bearing reason and record it in `DECISIONS.md`.
 
