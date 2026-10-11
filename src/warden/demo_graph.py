@@ -9,6 +9,7 @@ tests and the CLI chat harness.
 
 from __future__ import annotations
 
+import logging
 import operator
 from typing import Any, Literal
 from typing_extensions import Annotated, TypedDict
@@ -19,6 +20,8 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command, interrupt
 
 from warden.config import get_groq_llm
+
+logger = logging.getLogger("warden.demo_graph")
 
 
 class DemoState(TypedDict):
@@ -45,8 +48,8 @@ def draft_node(state: DemoState) -> dict[str, Any]:
                     f"Drafted email via Groq: '{content}' for team@example.com"
                 ]
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Groq draft generation failed, falling back to deterministic draft: %s", exc)
     return {"messages": ["Drafted email: 'Weekly report ready' for team@example.com"]}
 
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/audit", tags=["Audit Journal"])
 
@@ -55,8 +55,8 @@ async def search_audit_log(
     q: str | None = None,
     thread_id: str | None = None,
     kind: str | None = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     """Search and filter the append-only audit journal."""
     results = AUDIT_EVENTS

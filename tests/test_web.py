@@ -43,6 +43,16 @@ def test_api_inbox_list_and_resolve() -> None:
     # Resolve an existing gate if present
     if gates:
         gate_id = gates[0]["id"]
+
+        # Test invalid decision -> 400
+        res_invalid = client.post(
+            f"/api/inbox/{gate_id}/resolve",
+            json={"decision": "maybe"},
+            headers={"Warden-Key": "alice"},
+        )
+        assert res_invalid.status_code == 400
+
+        # Valid approve -> 200
         res_resolve = client.post(
             f"/api/inbox/{gate_id}/resolve",
             json={"decision": "approve"},
@@ -83,6 +93,10 @@ def test_api_audit_and_search() -> None:
     for evt in res_search.json()["events"]:
         assert "send_email" in str(evt).lower()
 
+    # Out of range limit validation
+    res_bad_limit = client.get("/api/audit?limit=0")
+    assert res_bad_limit.status_code == 422
+
 
 def test_api_telemetry() -> None:
     res = client.get("/api/telemetry")
@@ -101,19 +115,27 @@ def test_api_policies_crud() -> None:
     # Create without key -> 401
     res_unauth = client.post(
         "/api/policies",
-        json={"name": "test_rule", "action": "deny", "description": "test"},
+        json={"name": "test_unique_rule", "action": "deny", "description": "test"},
     )
     assert res_unauth.status_code == 401
 
     # Create with key -> 201
     res_created = client.post(
         "/api/policies",
-        json={"name": "test_rule", "action": "deny", "description": "test rule"},
+        json={"name": "test_unique_rule", "action": "deny", "description": "test rule"},
         headers={"Warden-Key": "alice"},
     )
     assert res_created.status_code == 201
-    assert res_created.json()["name"] == "test_rule"
+    assert res_created.json()["name"] == "test_unique_rule"
     assert res_created.json()["created_by"] == "alice"
+
+    # Duplicate creation -> 409
+    res_dup = client.post(
+        "/api/policies",
+        json={"name": "test_unique_rule", "action": "deny", "description": "duplicate"},
+        headers={"Warden-Key": "alice"},
+    )
+    assert res_dup.status_code == 409
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +164,7 @@ def test_frontend_runs_and_detail_view() -> None:
 
     res_detail = client.get("/runs/test-thread-detail")
     assert res_detail.status_code == 200
-    assert "test-thread-detail" in res.text or "Thread:" in res_detail.text
+    assert "test-thread-detail" in res_detail.text
 
 
 def test_frontend_audit_view() -> None:

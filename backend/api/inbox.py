@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import html
+from typing import Any, Literal
 from fastapi import APIRouter, Form, Header, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/inbox", tags=["Approvals Inbox"])
 
 
 class ResolveGateRequest(BaseModel):
-    decision: str
+    decision: Literal["approve", "deny"]
     reason: str | None = None
 
 
@@ -60,29 +61,42 @@ async def resolve_gate(
     if not dec:
         try:
             body = await request.json()
-            dec = str(body.get("decision", "approve"))
+            if isinstance(body, dict) and "decision" in body:
+                dec = str(body["decision"]).strip().lower()
         except Exception:
-            dec = "approve"
+            pass
+
+    if dec not in ("approve", "deny"):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_decision",
+                "detail": "Decision must be either 'approve' or 'deny'",
+            },
+        )
 
     gate = PENDING_GATES.pop(gate_id)
+    safe_dec = html.escape(dec)
+    safe_gate_id = html.escape(gate_id)
+    safe_action = html.escape(str(gate["action_name"]))
 
     # If requested via HTMX, return updated HTML snippet removing the card
     accept = request.headers.get("accept", "")
     if "text/html" in accept or "HX-Request" in request.headers:
         status_color = "var(--green)" if dec == "approve" else "var(--red)"
         badge_class = "badge-allowed" if dec == "approve" else "badge-denied"
-        html = f"""
+        card_html = f"""
         <div class="card" style="border-left: 4px solid {status_color}; opacity: 0.85;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <span class="badge {badge_class}">RESOLVED: {dec.upper()}</span>
-                    <strong style="margin-left: 0.5rem;">{gate['action_name']}</strong>
+                    <span class="badge {badge_class}">RESOLVED: {safe_dec.upper()}</span>
+                    <strong style="margin-left: 0.5rem;">{safe_action}</strong>
                 </div>
-                <span style="font-size: 0.8rem; color: var(--text-dim);">Gate {gate_id} resolved</span>
+                <span style="font-size: 0.8rem; color: var(--text-dim);">Gate {safe_gate_id} resolved</span>
             </div>
         </div>
         """
-        return HTMLResponse(content=html)
+        return HTMLResponse(content=card_html)
 
     return JSONResponse(
         content={
@@ -90,6 +104,6 @@ async def resolve_gate(
             "status": "resolved",
             "decision": dec,
             "action_name": gate["action_name"],
-            "approver": warden_key or "anonymous",
+            "approver": warden_key or "operator",
         }
     )

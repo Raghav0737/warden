@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 import pytest
+from pydantic import SecretStr
 
 from warden.config import Settings, get_groq_llm
 from warden.demo_graph import draft_node
@@ -57,7 +58,8 @@ def test_settings_groq_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GROQ_MODEL", "qwen/qwen3.8-27b")
 
     s = Settings()
-    assert s.groq_api_key == "gsk_test123"
+    assert s.groq_api_key is not None
+    assert s.groq_api_key.get_secret_value() == "gsk_test123"
     assert s.groq_model == "qwen/qwen3.8-27b"
 
 
@@ -72,7 +74,7 @@ def test_get_groq_llm_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_get_groq_llm_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     from warden import config
 
-    monkeypatch.setattr(config.settings, "groq_api_key", "gsk_test123")
+    monkeypatch.setattr(config.settings, "groq_api_key", SecretStr("gsk_test123"))
     monkeypatch.setattr(config.settings, "groq_model", "openai/gpt-oss-20b")
 
     llm = get_groq_llm()

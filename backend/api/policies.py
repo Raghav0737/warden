@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
+import uuid
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
@@ -13,7 +13,9 @@ router = APIRouter(prefix="/policies", tags=["Policies"])
 
 class PolicyCreateRequest(BaseModel):
     name: str = Field(..., description="Unique policy identifier")
-    action: str = Field(..., description="Verdict: allow, escalate, or deny")
+    action: Literal["allow", "escalate", "deny"] = Field(
+        ..., description="Verdict: allow, escalate, or deny"
+    )
     description: str = Field(..., description="Human-readable rule explanation")
     rule_text: str | None = Field(default=None, description="Rule definition")
 
@@ -61,9 +63,16 @@ async def create_policy(
     warden_key: str | None = Header(default=None, alias="Warden-Key"),
 ) -> dict[str, Any]:
     """Create a new policy rule (appends to policy_versions)."""
-    if not warden_key:
+    if not warden_key or not warden_key.strip():
         raise HTTPException(
             status_code=401, detail="Warden-Key header required for policy updates"
+        )
+
+    # Enforce unique policy name
+    if any(p["name"] == body.name for p in POLICIES_STORE):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Policy with name '{body.name}' already exists",
         )
 
     new_policy = {
@@ -73,7 +82,7 @@ async def create_policy(
         "description": body.description,
         "active": True,
         "current_version": 1,
-        "created_by": warden_key,
+        "created_by": warden_key.strip(),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     POLICIES_STORE.append(new_policy)
