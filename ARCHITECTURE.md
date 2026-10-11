@@ -64,7 +64,7 @@ warden/
     models.py           # Action, Outcome, journal event types
     journal.py          # AuditJournal: append(), query(), idempotent key
     policy/
-      engine.py         # PolicyEngine.evaluate -> allow|escalate|deny
+      engine.py         # PolicyEngine.evaluate -> Layered L0 (Static) -> L1 (DeBERTa) -> L2 (Granite Guardian)
       store.py          # DB rows + pgvector retrieval adapter
       versions.py       # append-only policy_versions (lock 9 guardrail)
     hitl/

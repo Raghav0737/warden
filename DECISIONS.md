@@ -25,3 +25,29 @@ One entry per decision that reopens, amends, or adds to the locks in `CONTEXT.md
 - Separate decisions recorded alongside: 30s/256MB/1CPU defaults, `D:\tmp\` as the single accessible host folder, shared-across-runs noted as Phase-1 accepted risk.
 
 **Maps to:** wayfinder map "Network isolation & sandboxed tool execution service" (GitHub issues, `wayfinder:map`).
+
+---
+
+## 2. Layered Policy Engine Architecture: L0 Static + L1 DeBERTa + L2 Granite Guardian (2026-10-12)
+
+**Status:** Accepted. **Complements:** lock 5 ("DENY is terminal"), lock 1 ("Both tool and LLM calls cross the seam"), lock 4 ("Fail-closed").
+
+**Decision.**
+`PolicyEngine.evaluate(action, ctx)` evaluates actions through a tiered 3-layer architecture:
+1. **L0 Deterministic Static Analysis (<1ms):** In-process AST parsers (`sqlglot`, `bashlex`), path traversal checks, and sensitive key regex. Instant `DENY` or rule-driven `ESCALATE`.
+2. **L1 Discriminative Fast Filter (10–25ms):** Sequence classification (`deberta-v3-small` / prompt-injection tuned checkpoint via ONNX Runtime). High-confidence attacks (score >= 0.85) immediately trigger terminal `DENY`. Benign read-only tools (score < 0.20) fast-path `ALLOW` bypassing L2.
+3. **L2 Generative Semantic Reasoner (80–150ms):** IBM Granite Guardian (`granite-guardian-3.1-2b` or `8b` via vLLM/Triton sidecar). Evaluates semantic intent, agent role authorization, and destructive side-effects. Emits `ALLOW`, `DENY`, or `ESCALATE` (HITL approval).
+
+**Context.**
+Static rules alone miss contextual prompt injection, natural language jailbreaks, and authorization drift. Heavy LLMs alone introduce excessive latency (>150ms) and token expense on benign read-only operations. A tiered pipeline provides sub-millisecond rejection for known bad patterns, fast-path approvals for safe reads, and reserves deep model inference for mutating or ambiguous calls.
+
+**Alternatives considered.**
+- *Pure Static Rules (Regex + AST only):* Rejected. Fails against semantic jailbreaks and subtle privilege creep in agentic tool arguments.
+- *LLM / Granite-only Evaluation:* Rejected. Adding 100–300ms to every tool call, including safe queries, bottlenecks agent throughput and inflates inference costs.
+- *Upstream Proxy / Gateway (outside GuardedExecutor):* Rejected. Violates Lock 1 (single seam) and Lock 3 (write-ahead journal idempotency before execution).
+
+**Consequences.**
+- Model evaluation runs inside `policy.evaluate()` or via a local inference sidecar container; Warden kernel remains lightweight Python without direct PyTorch dependencies.
+- Fail-closed invariant preserved: Sidecar timeout or crash returns `Error("governance_unavailable")`.
+- Terminal DENY invariant preserved: Any layer issuing `deny` immediately appends `action_denied` to `AuditJournal` and aborts.
+- Documented in `docs/LAYERED_SAFETY_ARCHITECTURE.md`.
